@@ -1,0 +1,248 @@
+name: Build Erom Música APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      pagina_inicial:
+        description: "Caminho do HTML inicial dentro do ZIP (opcional, ex: Erom/home.html)"
+        required: false
+        default: ""
+  push:
+    paths:
+      - "Erom-Music-Android-GitHub.zip"
+      - ".github/workflows/build-erom-music-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compilar Erom Música com Spotify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Extrair site e integrar playlist Spotify
+        shell: bash
+        env:
+          PAGE_INPUT: ${{ inputs.pagina_inicial }}
+        run: |
+          set -euo pipefail
+          ZIP="Erom-Music-Android-GitHub.zip"
+          test -s "$ZIP" || { echo "::error::Não encontrei $ZIP na raiz do repositório"; exit 1; }
+          mkdir -p source
+          unzip -q "$ZIP" -d source
+          if [ -n "${PAGE_INPUT:-}" ]; then
+            ENTRY="$(find source -type f -path "*/$PAGE_INPUT" -print -quit)"
+          else
+            ENTRY="$(find source -type f \( -iname 'index.html' -o -iname 'home.html' \) -print -quit)"
+          fi
+          test -n "$ENTRY" && test -s "$ENTRY" || { echo "::error::HTML inicial não encontrado. Informe pagina_inicial no botão Run workflow."; find source -maxdepth 4 -type f | head -100; exit 1; }
+          REL="${ENTRY#source/}"
+          ROOT_DIR="$(dirname "$ENTRY")"
+          mkdir -p android/app/src/main/assets/site
+          cp -R source/. android/app/src/main/assets/site/
+          PAGE_DIR="android/app/src/main/assets/site/$(dirname "$REL")"
+          mkdir -p "$PAGE_DIR"
+          cat > "$PAGE_DIR/spotify-playlist.html" <<'HTML'
+          <!doctype html>
+          <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101010"><title>Erom Música • Spotify</title>
+          <style>*{box-sizing:border-box}body{margin:0;background:#101010;color:#fff;font:16px Arial,sans-serif;padding:20px}.top{display:flex;gap:12px;align-items:center;margin-bottom:18px}a{color:#1ed760}iframe{border:0;border-radius:12px;width:100%;height: min(72vh,650px)}.back{display:inline-block;margin-bottom:16px;padding:10px 14px;background:#222;border-radius:24px;text-decoration:none}</style></head>
+          <body><a class="back" href="javascript:history.back()">← Voltar ao Erom Música</a><div class="top"><div><h2>Minha playlist Spotify</h2><p>Ouça sua playlist pelo player oficial do Spotify.</p></div></div>
+          <iframe title="Playlist Spotify Erom" src="https://open.spotify.com/embed/playlist/1ZizK6kXaVPt7bGZcyLMks?utm_source=generator&theme=0" width="100%" height="500" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+          <p><a href="https://open.spotify.com/playlist/1ZizK6kXaVPt7bGZcyLMks">Ver playlist completa</a></p></body></html>
+          HTML
+          export ENTRY_REL="$REL"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          p = Path("android/app/src/main/assets/site") / os.environ["ENTRY_REL"]
+          s = p.read_text(encoding="utf-8", errors="replace")
+          script = """
+          <script>
+          (function(){
+            if(document.getElementById('erom-spotify-playlist-button')) return;
+            var b=document.createElement('a');
+            b.id='erom-spotify-playlist-button';
+            b.href='spotify-playlist.html';
+            b.textContent='♫ Minha playlist Spotify';
+            b.setAttribute('aria-label','Abrir minha playlist Spotify');
+            b.style.cssText='position:fixed;z-index:2147483647;right:16px;bottom:18px;background:#1ed760;color:#071b0d;padding:13px 17px;border-radius:28px;font:700 14px Arial,sans-serif;text-decoration:none;box-shadow:0 4px 18px #0008';
+            document.body.appendChild(b);
+          })();
+          </script>
+          """
+          if "erom-spotify-playlist-button" not in s:
+              if "</body>" in s.lower():
+                  idx=s.lower().rfind("</body>")
+                  s=s[:idx]+script+s[idx:]
+              else:
+                  s += script
+              p.write_text(s, encoding="utf-8")
+          print("Página inicial integrada:", p)
+          PY
+          echo "ENTRY_REL=$REL" >> "$GITHUB_ENV"
+          echo "Página de entrada: $REL"
+
+      - name: Gerar projeto Android WebView
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android/app/src/main/java/br/com/erommusic/app android/app/src/main/res/values
+          cat > android/settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name = "EromMusic"
+          include(":app")
+          EOF
+          cat > android/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+          echo "org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8" > android/gradle.properties
+          cat > android/app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'br.com.erommusic.app'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'br.com.erommusic.app'
+                  minSdk 23
+                  targetSdk 28
+                  versionCode 1
+                  versionName '1.0.0'
+              }
+          }
+          EOF
+          cat > android/app/src/main/res/values/strings.xml <<'EOF'
+          <resources><string name="app_name">Erom Música</string></resources>
+          EOF
+          cat > android/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET"/>
+            <application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:label="@string/app_name" android:usesCleartextTraffic="true" android:hardwareAccelerated="true">
+              <activity android:name="br.com.erommusic.app.MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden">
+                <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
+          cat > android/app/src/main/java/br/com/erommusic/app/MainActivity.java <<'EOF'
+          package br.com.erommusic.app;
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.net.Uri;
+          public class MainActivity extends Activity {
+            private WebView webView;
+            private void immersiveMode() {
+              getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+              );
+            }
+            @Override protected void onCreate(Bundle savedInstanceState) {
+              super.onCreate(savedInstanceState);
+              immersiveMode();
+              webView = new WebView(this);
+              webView.setBackgroundColor(0xFF101010);
+              setContentView(webView);
+              WebSettings s = webView.getSettings();
+              s.setJavaScriptEnabled(true);
+              s.setDomStorageEnabled(true);
+              s.setMediaPlaybackRequiresUserGesture(false);
+              s.setAllowFileAccess(true);
+              s.setAllowContentAccess(true);
+              s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+              webView.setWebViewClient(new WebViewClient() {
+                @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                  Uri uri = request.getUrl();
+                  String scheme = uri.getScheme();
+                  // Manter páginas web dentro do Erom; nunca lançar o Chrome por links.
+                  return !("https".equalsIgnoreCase(scheme)
+                    || "http".equalsIgnoreCase(scheme)
+                    || "file".equalsIgnoreCase(scheme)
+                    || "about".equalsIgnoreCase(scheme));
+                }
+                @SuppressWarnings("deprecation")
+                @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                  Uri uri = Uri.parse(url);
+                  String scheme = uri.getScheme();
+                  return !("https".equalsIgnoreCase(scheme)
+                    || "http".equalsIgnoreCase(scheme)
+                    || "file".equalsIgnoreCase(scheme)
+                    || "about".equalsIgnoreCase(scheme));
+                }
+              });
+              webView.setWebChromeClient(new WebChromeClient());
+              webView.loadUrl("file:///android_asset/site/" + BuildConfig.ENTRY_PATH);
+            }
+            @Override public void onWindowFocusChanged(boolean hasFocus) {
+              super.onWindowFocusChanged(hasFocus);
+              if (hasFocus) immersiveMode();
+            }
+            @Override public void onBackPressed() {
+              if (webView != null && webView.canGoBack()) webView.goBack(); else super.onBackPressed();
+            }
+            @Override protected void onDestroy() {
+              if (webView != null) { webView.destroy(); webView = null; }
+              super.onDestroy();
+            }
+          }
+          EOF
+          # Passar o HTML inicial ao app sem codificar o caminho no Java.
+          printf '\n' >> android/app/build.gradle
+          cat >> android/app/build.gradle <<EOF
+          android.defaultConfig.buildConfigField "String", "ENTRY_PATH", "\"$ENTRY_REL\""
+          android.buildFeatures.buildConfig = true
+          EOF
+
+      - name: Instalar componentes Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}" -type f -name sdkmanager -print -quit)"
+          test -n "$SDKMANAGER" || { echo "::error::Android SDK/sdmanager não encontrado"; exit 1; }
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Compilar APK Erom Música
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+          /tmp/gradle-8.9/bin/gradle --no-daemon --stacktrace -p android assembleDebug
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK" || { echo "::error::APK não foi gerado"; exit 1; }
+          unzip -l "$APK" | grep -q 'assets/site/.*/spotify-playlist.html\|assets/site/spotify-playlist.html' || unzip -l "$APK" | grep -q 'assets/site/spotify-playlist.html'
+          mkdir -p output
+          cp "$APK" output/Erom-Musica.apk
+          sha256sum output/Erom-Musica.apk
+          ls -lh output/Erom-Musica.apk
+
+      - name: Disponibilizar APK para baixar
+        uses: actions/upload-artifact@v4
+        with:
+          name: Erom-Musica-APK
+          path: output/Erom-Musica.apk
+          if-no-files-found: error
+          retention-days: 14
