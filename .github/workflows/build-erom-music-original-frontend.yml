@@ -107,6 +107,8 @@ jobs:
           import android.webkit.WebViewClient;
           import android.webkit.WebResourceRequest;
           import android.net.Uri;
+          import android.content.Intent;
+          import android.content.ActivityNotFoundException;
           public class MainActivity extends Activity {
             private WebView webView;
             private void immersiveMode() {
@@ -129,20 +131,22 @@ jobs:
               s.setAllowContentAccess(true);
               s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
               webView.setWebViewClient(new WebViewClient() {
-                @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                  Uri uri = request.getUrl();
+                private boolean openExternal(Uri uri) {
                   String scheme = uri.getScheme();
-                  return !("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme) ||
-                    "file".equalsIgnoreCase(scheme) || "about".equalsIgnoreCase(scheme) ||
-                    "data".equalsIgnoreCase(scheme) || "javascript".equalsIgnoreCase(scheme));
+                  if ("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme) ||
+                      "file".equalsIgnoreCase(scheme) || "about".equalsIgnoreCase(scheme) ||
+                      "data".equalsIgnoreCase(scheme) || "javascript".equalsIgnoreCase(scheme)) return false;
+                  try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                  } catch (ActivityNotFoundException ignored) { }
+                  return true;
+                }
+                @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                  return openExternal(request.getUrl());
                 }
                 @SuppressWarnings("deprecation")
                 @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                  Uri uri = Uri.parse(url);
-                  String scheme = uri.getScheme();
-                  return !("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme) ||
-                    "file".equalsIgnoreCase(scheme) || "about".equalsIgnoreCase(scheme) ||
-                    "data".equalsIgnoreCase(scheme) || "javascript".equalsIgnoreCase(scheme));
+                  return openExternal(Uri.parse(url));
                 }
               });
               webView.setWebChromeClient(new WebChromeClient());
