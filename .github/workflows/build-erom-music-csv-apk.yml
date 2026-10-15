@@ -50,14 +50,41 @@ jobs:
           p=os.environ["TARGET"]
           with open(p,"r",encoding="utf-8") as f: html=f.read()
           addition = """
-          <script id="erom-csv-import-entry">
-          (()=>{if(document.getElementById('erom-csv-import-button'))return;
-          const b=document.createElement('button');b.id='erom-csv-import-button';b.type='button';
-          b.textContent='Importar playlist CSV';
-          Object.assign(b.style,{position:'fixed',right:'14px',bottom:'14px',zIndex:'2147483647',padding:'12px 16px',border:'0',borderRadius:'999px',background:'#1ed760',color:'#071b0d',font:'bold 14px system-ui',boxShadow:'0 3px 16px #0008'});
-          b.addEventListener('click',()=>{location.href='file:///android_asset/site/importar-playlist.html'});
-          document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(b));
-          if(document.readyState!=='loading')document.body.appendChild(b);
+          <style id="erom-custom-theme-style">
+          :root{--erom-accent:#1ed760;--erom-bg:#101010;--erom-text:#ffffff}
+          #erom-settings-tools{margin:16px 0;padding:16px;border:1px solid color-mix(in srgb,var(--erom-accent) 55%,transparent);border-radius:16px;background:rgba(20,20,20,.96);color:var(--erom-text);font:14px system-ui}
+          #erom-settings-tools button{border:0;border-radius:10px;padding:10px 12px;background:var(--erom-accent);color:#111;font-weight:700;margin:4px;cursor:pointer}
+          #erom-settings-tools .erom-colors{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+          #erom-settings-tools label{display:inline-flex;align-items:center;gap:8px;margin:6px 10px 6px 0}
+          #erom-settings-tools input[type=color]{width:42px;height:36px;border:0;background:transparent;padding:0}
+          </style>
+          <script id="erom-settings-tools-script">
+          (()=>{if(window.__eromSettingsToolsLoaded)return;window.__eromSettingsToolsLoaded=true;
+          const palettes=[['Verde Spotify','#1ed760','#101010','#ffffff'],['Azul oceano','#3b82f6','#0b1220','#f8fafc'],['Roxo neon','#a855f7','#100b18','#ffffff'],['Rosa','#f472b6','#1b1017','#fff7fb'],['Laranja','#fb923c','#1b120b','#fffaf5'],['Vermelho','#ef4444','#190b0b','#fffafa'],['Ciano','#22d3ee','#07171a','#ecfeff'],['Dourado','#eab308','#171306','#fffbea'],['Branco minimalista','#e5e7eb','#f8fafc','#111827'],['Preto e vermelho','#ff3b3b','#050505','#ffffff']];
+          function applyTheme(a,b,c){document.documentElement.style.setProperty('--erom-accent',a);document.document.documentElement.style.setProperty('--erom-bg',b);document.documentElement.style.setProperty('--erom-text',c);
+          let style=document.getElementById('erom-theme-overrides');if(!style){style=document.createElement('style');style.id='erom-theme-overrides';document.head.appendChild(style)}
+          style.textContent=':root{color-scheme:dark} body{--erom-accent:'+a+';--erom-bg:'+b+';--erom-text:'+c+'} button:not(#erom-settings-tools button),[role=button],.active,.selected{accent-color:'+a+'}';
+          try{localStorage.setItem('erom-custom-colors',JSON.stringify({a,b,c}))}catch(e){}}
+          try{const saved=JSON.parse(localStorage.getItem('erom-custom-colors')||'null');if(saved)applyTheme(saved.a,saved.b,saved.c)}catch(e){}
+          function isSettingsText(el){const t=(el.innerText||el.textContent||'').trim().toLowerCase();return t.length<45&&/(configuraç|configurac|settings|ajustes)/i.test(t)}
+          function findSettingsHost(){const els=[...document.querySelectorAll('button,a,[role=button],nav li,[role=tab],h1,h2,h3,span,div')];return els.find(el=>isSettingsText(el)&&el.children.length<4)}
+          function makePanel(host){if(document.getElementById('erom-settings-tools'))return;
+          const panel=document.createElement('section');panel.id='erom-settings-tools';
+          panel.innerHTML='<strong style="font-size:17px">Personalização do Erom Música</strong><p>Importe uma playlist ou escolha suas próprias cores.</p><button id="erom-open-csv" type="button">Importar playlist CSV</button><div style="margin-top:12px;font-weight:700">Temas prontos</div><div class="erom-colors" id="erom-palette-list"></div><div style="font-weight:700">Cores personalizadas</div><label>Cor principal <input id="erom-color-accent" type="color" value="#1ed760"></label><label>Fundo <input id="erom-color-bg" type="color" value="#101010"></label><label>Texto <input id="erom-color-text" type="color" value="#ffffff"></label><button id="erom-save-colors" type="button">Aplicar cores</button>';
+          const place=host&&(host.closest('section,[role=tabpanel],main,dialog,.settings,.configuracoes')||host.parentElement);
+          (place||document.querySelector('main')||document.body).appendChild(panel);
+          document.getElementById('erom-open-csv').onclick=()=>{location.href='file:///android_asset/site/importar-playlist.html'};
+          const list=document.getElementById('erom-palette-list');
+          palettes.forEach(p=>{const btn=document.createElement('button');btn.type='button';btn.textContent=p[0];btn.style.background=p[1];btn.style.color=p[2]==='#f8fafc'?'#111':'#fff';btn.onclick=()=>{applyTheme(p[1],p[2],p[3]);document.getElementById('erom-color-accent').value=p[1];document.getElementById('erom-color-bg').value=p[2];document.getElementById('erom-color-text').value=p[3]};list.appendChild(btn)});
+          document.getElementById('erom-save-colors').onclick=()=>applyTheme(document.getElementById('erom-color-accent').value,document.getElementById('erom-color-bg').value,document.getElementById('erom-color-text').value);
+          }
+          function scan(){const host=findSettingsHost();if(host){const parent=host.closest('section,[role=tabpanel],main,dialog,.settings,.configuracoes')||host.parentElement;
+          if(parent&&!parent.contains(document.getElementById('erom-settings-tools'))){const observer=new MutationObserver(()=>{if(!document.getElementById('erom-settings-tools')&&isSettingsText(host))makePanel(host)});observer.observe(document.body,{childList:true,subtree:true});}
+          host.addEventListener('click',()=>setTimeout(()=>makePanel(host),150),{once:false});
+          if(/configuraç|configurac|settings|ajustes/i.test(location.href))makePanel(host);
+          }}
+          if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',scan);else scan();
+          new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true});
           })();
           </script>
           """
