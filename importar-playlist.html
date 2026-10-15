@@ -17,8 +17,13 @@
 <p class="muted">Formatos aceitos: MP3, M4A, AAC, OGG, WAV, FLAC, OPUS e WMA. ZIPs criptografados não são suportados.</p>
 </section>
 <section class="panel">
-<h2>Selecionar músicas do dispositivo</h2>
-<p>Selecione arquivos de áudio diretamente no celular.</p>
+<h2>Importar de uma pasta do dispositivo</h2>
+<p>Escolha uma pasta pelo seletor oficial do Android. O Erom vai procurar arquivos de áudio dentro dela e subpastas, ignorando diretórios com nome ou caminho relacionado ao WhatsApp. Para mais segurança, selecione Música, Downloads ou outra pasta onde guarda suas faixas.</p>
+<div><button id="choosefolder" type="button">Escolher pasta para importar</button></div>
+<div id="folderstatus" class="status" role="status" aria-live="polite"></div>
+<hr style="border-color:#333;margin:18px 0">
+<h3>Ou selecionar arquivos manualmente</h3>
+<p>Somente os arquivos que você escolher serão copiados.</p>
 <input id="audiofiles" type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.wav,.flac,.opus,.wma" multiple>
 <div><button id="importaudio" type="button">Copiar músicas selecionadas</button></div>
 <div id="audiostatus" class="status" role="status" aria-live="polite"></div>
@@ -40,6 +45,8 @@ const audioExt=/\.(mp3|m4a|aac|ogg|wav|flac|opus|wma)$/i;
 function base64Of(bytes){let binary='';const chunk=0x8000;for(let i=0;i<bytes.length;i+=chunk)binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+chunk,bytes.length)));return btoa(binary);}
 async function saveAudio(name,bytes){if(!window.EromNative||!window.EromNative.saveBase64)throw Error('Este APK ainda não tem o recurso nativo de gravação. Gere a nova compilação pelo GitHub Actions.');const safe=name.split(/[\\/]/).pop().replace(/[^a-zA-Z0-9._() -]/g,'_');const result=window.EromNative.saveBase64(safe,base64Of(bytes));if(String(result).startsWith('ERRO:'))throw Error(String(result).slice(5));return result;}
 document.querySelector('#importzip').addEventListener('click',async()=>{const f=document.querySelector('#zipfile').files?.[0],s=document.querySelector('#zipstatus');if(!f){s.textContent='Selecione um arquivo ZIP primeiro.';return;}if(!window.JSZip){s.textContent='Não foi possível carregar o leitor de ZIP. Verifique a internet e tente novamente.';return;}s.textContent='Lendo ZIP…';try{const z=await JSZip.loadAsync(f),files=Object.values(z.files).filter(x=>!x.dir&&audioExt.test(x.name));if(!files.length)throw Error('Nenhum arquivo de áudio compatível foi encontrado.');let done=0;for(const x of files){const bytes=await x.async('uint8array');if(bytes.length>150*1024*1024)throw Error('Arquivo muito grande: '+x.name);await saveAudio(x.name,bytes);done++;s.textContent='Importando '+done+' de '+files.length+'…';}s.textContent='Concluído: '+done+' arquivo(s) copiado(s) para Erom playlist.';}catch(e){s.textContent='Falha na importação: '+(e.message||e);}});
+document.querySelector('#choosefolder').addEventListener('click',()=>{const s=document.querySelector('#folderstatus');if(!window.EromNative||!window.EromNative.chooseMusicFolder){s.textContent='Este APK não tem o seletor de pastas atualizado. Instale a nova versão.';return;}s.textContent='Abrindo seletor de pastas do Android…';window.EromNative.chooseMusicFolder();});
+window.eromFolderImportStatus=(message)=>{document.querySelector('#folderstatus').textContent=message;};
 document.querySelector('#importaudio').addEventListener('click',async()=>{const files=[...(document.querySelector('#audiofiles').files||[])],s=document.querySelector('#audiostatus');if(!files.length){s.textContent='Selecione uma ou mais músicas primeiro.';return;}try{let done=0;for(const f of files){if(f.size>150*1024*1024)throw Error('Arquivo muito grande: '+f.name);await saveAudio(f.name,new Uint8Array(await f.arrayBuffer()));done++;s.textContent='Copiando '+done+' de '+files.length+'…';}s.textContent='Concluído: '+done+' música(s) copiada(s) para Erom playlist.';}catch(e){s.textContent='Falha ao copiar: '+(e.message||e);}});
 const fileInput=document.querySelector('#csv'), statusEl=document.querySelector('#status'), rowsEl=document.querySelector('#rows'), countEl=document.querySelector('#count'), exportBtn=document.querySelector('#export');
 let tracks=[];
