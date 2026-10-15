@@ -1,6 +1,11 @@
 name: Build Erom Música APK com importador CSV
 
 on:
+  push:
+    paths:
+      - "modelo-playlist.csv"
+      - "importar-playlist.html"
+      - ".github/workflows/build-erom-music-csv-apk.yml"
   workflow_dispatch:
     inputs:
       pagina_inicial:
