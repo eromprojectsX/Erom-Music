@@ -1,0 +1,170 @@
+name: Build Erom Music APK corrigido
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-erom-music-corrigido.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Instalar SDK Android
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - name: Montar projeto Android preservando a interface original
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "Erom-Music-Frontend-Original-Cloudflare.zip"
+          mkdir -p app/src/main/assets app/src/main/java/br/com/erommusic/app
+          mkdir -p /tmp/erom-frontend
+          unzip -q "Erom-Music-Frontend-Original-Cloudflare.zip" -d /tmp/erom-frontend
+          HTML="$(find /tmp/erom-frontend -type f -iname 'index.html' -size +100k | head -n 1)"
+          if [ -z "$HTML" ]; then
+            HTML="$(find /tmp/erom-frontend -type f -iname '*.html' -size +100k | head -n 1)"
+          fi
+          test -n "$HTML"
+          cp "$HTML" app/src/main/assets/index.html
+          cat > settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name = 'EromMusicAndroid'
+          include ':app'
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+          }
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'br.com.erommusic.app'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'br.com.erommusic.app'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 2
+                  versionName '1.0.1'
+              }
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <application android:allowBackup="false" android:usesCleartextTraffic="false" android:label="Erom Music" android:theme="@android:style/Theme.Material.NoActionBar" android:supportsRtl="true">
+                  <activity android:name=".MainActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/br/com/erommusic/app/MainActivity.java <<'EOF'
+          package br.com.erommusic.app;
+          import android.Manifest;
+          import android.app.Activity;
+          import android.content.ContentUris;
+          import android.content.pm.PackageManager;
+          import android.database.Cursor;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.provider.MediaStore;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+          public class MainActivity extends Activity {
+              private WebView webView;
+              private static final int AUDIO_PERMISSION_REQUEST = 2302;
+              private String audioPermission() { return Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_AUDIO : Manifest.permission.READ_EXTERNAL_STORAGE; }
+              private boolean hasAudioPermission() { return Build.VERSION.SDK_INT < 23 || checkSelfPermission(audioPermission()) == PackageManager.PERMISSION_GRANTED; }
+              @Override public void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  getWindow().setStatusBarColor(android.graphics.Color.BLACK);
+                  getWindow().setNavigationBarColor(android.graphics.Color.BLACK);
+                  webView = new WebView(this);
+                  webView.setBackgroundColor(android.graphics.Color.BLACK);
+                  WebSettings s = webView.getSettings();
+                  s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true); s.setDatabaseEnabled(true);
+                  s.setAllowFileAccess(true); s.setAllowContentAccess(true); s.setMediaPlaybackRequiresUserGesture(false);
+                  webView.addJavascriptInterface(new DeviceAudioBridge(), "EromAndroid");
+                  webView.setWebChromeClient(new WebChromeClient());
+                  webView.setWebViewClient(new WebViewClient() {
+                      @Override public void onPageFinished(WebView view, String url) {
+                          view.evaluateJavascript("(" + injectedLibraryScript() + ")();", null);
+                      }
+                  });
+                  setContentView(webView);
+                  webView.loadUrl("file:///android_asset/index.html");
+                  if (Build.VERSION.SDK_INT >= 23 && !hasAudioPermission()) requestPermissions(new String[]{audioPermission()}, AUDIO_PERMISSION_REQUEST);
+              }
+              private String injectedLibraryScript() {
+                  return "function(){if(typeof window.refreshDeviceAudio==='function'){window.refreshDeviceAudio();return;}if(document.getElementById('erom-device-audio-button'))return;var b=document.createElement('button');b.id='erom-device-audio-button';b.textContent='♫ Procurar músicas do celular';b.style.cssText='position:fixed;right:14px;bottom:82px;z-index:2147483647;background:#1db954;color:#07110a;border:0;border-radius:24px;padding:13px 17px;font:600 14px sans-serif;box-shadow:0 4px 18px #0008';document.body.appendChild(b);b.onclick=function(){if(!window.EromAndroid.hasAudioPermission()){window.EromAndroid.requestAudioPermission();return;}var a=[];try{a=JSON.parse(window.EromAndroid.getAudioFiles()||'[]')}catch(e){}var old=document.getElementById('erom-device-audio-panel');if(old)old.remove();var p=document.createElement('div');p.id='erom-device-audio-panel';p.style.cssText='position:fixed;inset:8% 5%;z-index:2147483647;background:#101010;color:white;border:1px solid #444;border-radius:18px;padding:16px;overflow:auto;font:14px sans-serif;box-shadow:0 0 0 9999px #0009';var h=document.createElement('div');h.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:12px';var t=document.createElement('b');t.textContent='Músicas do celular ('+a.length+')';var x=document.createElement('button');x.textContent='Fechar';x.onclick=function(){p.remove()};h.append(t,x);p.appendChild(h);if(!a.length){var m=document.createElement('p');m.textContent='Nenhuma música encontrada. Confira a permissão de áudio e se os arquivos aparecem no app Arquivos.';p.appendChild(m)}a.forEach(function(f){var r=document.createElement('div');r.style.cssText='padding:12px 4px;border-bottom:1px solid #333;display:flex;gap:12px;align-items:center';var d=document.createElement('div');d.style.cssText='flex:1;min-width:0';var n=document.createElement('div');n.textContent=f.title||f.name||'Áudio';n.style.cssText='font-weight:600;overflow-wrap:anywhere';var ar=document.createElement('div');ar.textContent=(f.artist||'Artista desconhecido')+' · '+(f.album||'Arquivos do celular');ar.style.cssText='color:#aaa;font-size:12px;margin-top:4px';d.append(n,ar);var play=document.createElement('button');play.textContent='▶';play.onclick=function(){var audio=document.getElementById('erom-device-audio-player');if(!audio){audio=document.createElement('audio');audio.id='erom-device-audio-player';audio.controls=true;audio.style.cssText='width:100%;position:sticky;bottom:0;background:#111';p.appendChild(audio)}audio.src=f.uri;audio.play().catch(function(){})};r.append(d,play);p.appendChild(r)});document.body.appendChild(p);};}";
+              }
+              private class DeviceAudioBridge {
+                  @JavascriptInterface public boolean hasAudioPermission() { return MainActivity.this.hasAudioPermission(); }
+                  @JavascriptInterface public void requestAudioPermission() { runOnUiThread(() -> { if (Build.VERSION.SDK_INT >= 23 && !MainActivity.this.hasAudioPermission()) requestPermissions(new String[]{audioPermission()}, AUDIO_PERMISSION_REQUEST); }); }
+                  @JavascriptInterface public String getAudioFiles() {
+                      JSONArray out = new JSONArray();
+                      if (!hasAudioPermission()) return out.toString();
+                      String[] projection = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                          ? new String[]{MediaStore.Audio.Media._ID,MediaStore.Audio.Media.TITLE,MediaStore.Audio.Media.ARTIST,MediaStore.Audio.Media.ALBUM,MediaStore.Audio.Media.DURATION,MediaStore.Audio.Media.RELATIVE_PATH,MediaStore.Audio.Media.DISPLAY_NAME}
+                          : new String[]{MediaStore.Audio.Media._ID,MediaStore.Audio.Media.TITLE,MediaStore.Audio.Media.ARTIST,MediaStore.Audio.Media.ALBUM,MediaStore.Audio.Media.DURATION,MediaStore.Audio.Media.DISPLAY_NAME,MediaStore.Audio.Media.DATA};
+                      try (Cursor c = getContentResolver().query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,projection,null,null,MediaStore.Audio.Media.TITLE+" COLLATE NOCASE ASC")) {
+                          if (c != null) while(c.moveToNext()) {
+                              long id=c.getLong(c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID));
+                              String path=Build.VERSION.SDK_INT>=Build.VERSION_CODES.Q?c.getString(c.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH)):c.getString(c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA));
+                              String name=c.getString(c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME));
+                              if (((path==null?"":path)+"/"+(name==null?"":name)).toLowerCase(java.util.Locale.ROOT).contains("whatsapp")) continue;
+                              JSONObject o=new JSONObject(); o.put("id",String.valueOf(id)); o.put("title",c.getString(c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)));
+                              o.put("artist",c.getString(c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST))); o.put("album",c.getString(c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)));
+                              o.put("duration",c.getLong(c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION))/1000); o.put("path",path); o.put("name",name);
+                              o.put("uri",ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,id).toString()); out.put(o);
+                          }
+                      } catch(Exception ignored) {}
+                      return out.toString();
+                  }
+              }
+              @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults) {
+                  super.onRequestPermissionsResult(requestCode,permissions,grantResults);
+                  if(requestCode==AUDIO_PERMISSION_REQUEST && webView!=null) webView.postDelayed(()->webView.evaluateJavascript("(" + injectedLibraryScript() + ")();",null),300);
+              }
+              @Override public void onBackPressed() { if(webView!=null&&webView.canGoBack())webView.goBack();else super.onBackPressed(); }
+              @Override protected void onDestroy() { if(webView!=null){webView.destroy();webView=null;}super.onDestroy(); }
+          }
+          EOF
+      - name: Compilar APK
+        run: gradle --no-daemon assembleDebug
+      - name: Validar APK
+        run: test -s app/build/outputs/apk/debug/app-debug.apk
+      - name: Publicar APK como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: Erom-Music-Android-APK-CORRIGIDO
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
