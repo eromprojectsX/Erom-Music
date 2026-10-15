@@ -109,7 +109,7 @@ jobs:
           include(":app")
           EOF
           echo "plugins { id 'com.android.application' version '8.7.3' apply false }" > android/build.gradle
-          echo "org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8" > android/gradle.properties
+          printf "org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8\nandroid.useAndroidX=true\nandroid.enableJetifier=true\n" > android/gradle.properties
           cat > android/app/build.gradle <<'EOF'
           plugins { id 'com.android.application' }
           android {
