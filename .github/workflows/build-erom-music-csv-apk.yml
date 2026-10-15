@@ -119,7 +119,7 @@ jobs:
             buildTypes { debug { buildConfigField 'String', 'ENTRY_PATH', '"' + System.getenv('ENTRY_REL') + '"' } }
             buildFeatures { buildConfig true }
           }
-          dependencies { implementation 'androidx.webkit:webkit:1.12.1' }
+          dependencies { implementation 'androidx.webkit:webkit:1.12.1'; implementation 'androidx.documentfile:documentfile:1.0.1' }
           EOF
           echo '<resources><string name="app_name">Erom Música</string></resources>' > android/app/src/main/res/values/strings.xml
           cat > android/app/src/main/AndroidManifest.xml <<'EOF'
@@ -139,6 +139,7 @@ jobs:
           import android.view.View;
           import android.webkit.*;
           import androidx.webkit.WebViewAssetLoader;
+          import androidx.documentfile.provider.DocumentFile;
           import android.net.Uri;
           import android.content.Intent;
           import android.content.ActivityNotFoundException;
@@ -149,54 +150,116 @@ jobs:
           import android.provider.MediaStore;
           import java.io.File;
           import java.io.FileOutputStream;
+          import java.io.InputStream;
           import java.io.OutputStream;
+          import java.util.Locale;
           public class MainActivity extends Activity {
             private WebView webView;
             private WebViewAssetLoader assetLoader;
             private ValueCallback<Uri[]> fileCallback;
             private static final int FILE_PICKER=701;
+            private static final int FOLDER_PICKER=702;
             public class EromBridge {
               @JavascriptInterface public String saveBase64(String filename,String encoded) {
                 try {
-                  String clean=filename==null?"musica.mp3":filename.replaceAll("[^a-zA-Z0-9._() -]","_");
-                  if(clean.isEmpty()||clean.equals(".")||clean.equals("..")) clean="musica.mp3";
+                  String clean=safeName(filename);
                   byte[] bytes=Base64.decode(encoded,Base64.DEFAULT);
                   if(bytes.length>150*1024*1024) return "ERRO: arquivo excede 150 MB";
-                  if(Build.VERSION.SDK_INT>=29) {
-                    ContentValues values=new ContentValues();
-                    values.put(MediaStore.Audio.Media.DISPLAY_NAME,clean);
-                    values.put(MediaStore.Audio.Media.MIME_TYPE,mimeFor(clean));
-                    values.put(MediaStore.Audio.Media.RELATIVE_PATH,Environment.DIRECTORY_MUSIC+"/Erom playlist");
-                    values.put(MediaStore.Audio.Media.IS_PENDING,1);
-                    Uri uri=getContentResolver().insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,values);
-                    if(uri==null) return "ERRO: não foi possível criar o arquivo na pasta pública";
-                    try(OutputStream stream=getContentResolver().openOutputStream(uri)) {
-                      if(stream==null) throw new Exception("não foi possível abrir o arquivo");
-                      stream.write(bytes);
-                    }
-                    values.clear(); values.put(MediaStore.Audio.Media.IS_PENDING,0);
-                    getContentResolver().update(uri,values,null,null);
-                    return "OK:"+uri.toString();
-                  } else {
-                    File folder=new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),"Erom playlist");
-                    if(!folder.exists()&&!folder.mkdirs()) return "ERRO: não foi possível criar a pasta pública Música/Erom playlist";
-                    File out=new File(folder,clean);
-                    try(FileOutputStream stream=new FileOutputStream(out)){stream.write(bytes);}
-                    return "OK:"+out.getAbsolutePath();
-                  }
+                  try(InputStream in=new java.io.ByteArrayInputStream(bytes)){return copyToMusicFolder(clean,in);}
                 } catch(Exception e){return "ERRO:"+e.getMessage();}
               }
-              private String mimeFor(String name) {
-                String n=name.toLowerCase(java.util.Locale.ROOT);
-                if(n.endsWith(".mp3"))return "audio/mpeg";
-                if(n.endsWith(".m4a"))return "audio/mp4";
-                if(n.endsWith(".aac"))return "audio/aac";
-                if(n.endsWith(".ogg")||n.endsWith(".opus"))return "audio/ogg";
-                if(n.endsWith(".wav"))return "audio/wav";
-                if(n.endsWith(".flac"))return "audio/flac";
-                if(n.endsWith(".wma"))return "audio/x-ms-wma";
-                return "application/octet-stream";
+              @JavascriptInterface public void chooseMusicFolder() {
+                runOnUiThread(()->{
+                  try {
+                    Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                    startActivityForResult(intent,FOLDER_PICKER);
+                  } catch(ActivityNotFoundException e) {
+                    notifyFolderStatus("Não foi possível abrir o seletor de pastas do Android.");
+                  }
+                });
               }
+            }
+            private String safeName(String filename) {
+              String clean=filename==null?"musica.mp3":filename.replaceAll("[^a-zA-Z0-9._() -]","_");
+              if(clean.isEmpty()||clean.equals(".")||clean.equals("..")) clean="musica.mp3";
+              return clean;
+            }
+            private boolean isAudio(String name) {
+              String n=name.toLowerCase(Locale.ROOT);
+              return n.endsWith(".mp3")||n.endsWith(".m4a")||n.endsWith(".aac")||n.endsWith(".ogg")||n.endsWith(".opus")||n.endsWith(".wav")||n.endsWith(".flac")||n.endsWith(".wma");
+            }
+            private boolean isWhatsAppFolder(String name) {
+              String n=name==null?"":name.toLowerCase(Locale.ROOT).replace(" ","").replace("_","");
+              return n.contains("whatsapp")||n.contains("com.whatsapp")||n.contains("whatsappp");
+            }
+            private void notifyFolderStatus(String message) {
+              if(webView==null)return;
+              String escaped=message.replace("\\","\\\\").replace("'","\\'").replace("\n"," ");
+              webView.post(()->webView.evaluateJavascript("window.eromFolderImportStatus && window.eromFolderImportStatus('"+escaped+"')",null));
+            }
+            private void scanFolder(Uri treeUri) {
+              new Thread(()->{
+                int[] counts={0,0,0};
+                try {
+                  DocumentFile root=DocumentFile.fromTreeUri(this,treeUri);
+                  if(root==null||!root.canRead())throw new Exception("O Android não liberou leitura para esta pasta.");
+                  scanNode(root,counts);
+                  notifyFolderStatus("Concluído: "+counts[0]+" música(s) copiada(s) para Music/Erom playlist; "+counts[1]+" arquivo(s) de áudio ignorado(s) em pastas do WhatsApp."+ (counts[2]>0?" Falhas: "+counts[2]+".":""));
+                } catch(Exception e){notifyFolderStatus("Falha ao ler a pasta: "+(e.getMessage()==null?e.toString():e.getMessage()));}
+              },"erom-folder-import").start();
+            }
+            private void scanNode(DocumentFile node,int[] counts) {
+              if(node==null)return;
+              if(node.isDirectory()) {
+                if(isWhatsAppFolder(node.getName())) { counts[1]++; return; }
+                DocumentFile[] children=node.listFiles();
+                for(DocumentFile child:children) scanNode(child,counts);
+                return;
+              }
+              String name=node.getName();
+              if(name==null||!isAudio(name))return;
+              try(InputStream in=getContentResolver().openInputStream(node.getUri())) {
+                if(in==null)throw new Exception("Não foi possível ler "+name);
+                String result=copyToMusicFolder(safeName(name),in);
+                if(result.startsWith("OK:"))counts[0]++;else counts[2]++;
+              } catch(Exception e){counts[2]++;}
+            }
+            private String copyToMusicFolder(String clean,InputStream input) throws Exception {
+              if(Build.VERSION.SDK_INT>=29) {
+                ContentValues values=new ContentValues();
+                values.put(MediaStore.Audio.Media.DISPLAY_NAME,clean);
+                values.put(MediaStore.Audio.Media.MIME_TYPE,mimeFor(clean));
+                values.put(MediaStore.Audio.Media.RELATIVE_PATH,Environment.DIRECTORY_MUSIC+"/Erom playlist");
+                values.put(MediaStore.Audio.Media.IS_PENDING,1);
+                Uri uri=getContentResolver().insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,values);
+                if(uri==null) return "ERRO: não foi possível criar o arquivo na pasta pública";
+                try(OutputStream out=getContentResolver().openOutputStream(uri)) {
+                  if(out==null)throw new Exception("não foi possível abrir o arquivo");
+                  byte[] buffer=new byte[65536];int n;long total=0;
+                  while((n=input.read(buffer))!=-1){total+=n;if(total>150L*1024*1024)throw new Exception("arquivo excede 150 MB");out.write(buffer,0,n);}
+                } catch(Exception e){getContentResolver().delete(uri,null,null);throw e;}
+                values.clear();values.put(MediaStore.Audio.Media.IS_PENDING,0);
+                getContentResolver().update(uri,values,null,null);
+                return "OK:"+uri;
+              } else {
+                File folder=new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),"Erom playlist");
+                if(!folder.exists()&&!folder.mkdirs())return "ERRO: não foi possível criar a pasta pública Música/Erom playlist";
+                File outFile=new File(folder,clean);
+                try(OutputStream out=new FileOutputStream(outFile)){byte[] buffer=new byte[65536];int n;while((n=input.read(buffer))!=-1)out.write(buffer,0,n);}
+                return "OK:"+outFile.getAbsolutePath();
+              }
+            }
+            private String mimeFor(String name) {
+              String n=name.toLowerCase(Locale.ROOT);
+              if(n.endsWith(".mp3"))return "audio/mpeg";
+              if(n.endsWith(".m4a"))return "audio/mp4";
+              if(n.endsWith(".aac"))return "audio/aac";
+              if(n.endsWith(".ogg")||n.endsWith(".opus"))return "audio/ogg";
+              if(n.endsWith(".wav"))return "audio/wav";
+              if(n.endsWith(".flac"))return "audio/flac";
+              if(n.endsWith(".wma"))return "audio/x-ms-wma";
+              return "application/octet-stream";
             }
             private void immersiveMode(){getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE);}
             @Override protected void onCreate(Bundle b){super.onCreate(b);immersiveMode();webView=new WebView(this);webView.setBackgroundColor(0xFF101010);setContentView(webView);
@@ -218,7 +281,17 @@ jobs:
               });
               webView.loadUrl("https://appassets.androidplatform.net/assets/site/"+BuildConfig.ENTRY_PATH);
             }
-            @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==FILE_PICKER&&fileCallback!=null){Uri[] results=WebChromeClient.FileChooserParams.parseResult(result,data);fileCallback.onReceiveValue(results);fileCallback=null;}}
+            @Override protected void onActivityResult(int request,int result,Intent data){
+              super.onActivityResult(request,result,data);
+              if(request==FILE_PICKER&&fileCallback!=null){Uri[] results=WebChromeClient.FileChooserParams.parseResult(result,data);fileCallback.onReceiveValue(results);fileCallback=null;}
+              if(request==FOLDER_PICKER) {
+                if(result==RESULT_OK&&data!=null&&data.getData()!=null) {
+                  Uri tree=data.getData();
+                  try{getContentResolver().takePersistableUriPermission(tree,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}
+                  scanFolder(tree);
+                } else notifyFolderStatus("Seleção de pasta cancelada.");
+              }
+            }
             @Override public void onWindowFocusChanged(boolean f){super.onWindowFocusChanged(f);if(f)immersiveMode();}
             @Override public void onBackPressed(){if(webView!=null&&webView.canGoBack())webView.goBack();else super.onBackPressed();}
           }
