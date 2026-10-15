@@ -17,14 +17,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Preparar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-      - name: Preparar Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Instalar SDK Android
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
       - name: Montar projeto Android preservando a interface original
         shell: bash
         run: |
@@ -158,7 +150,18 @@ jobs:
           }
           EOF
       - name: Compilar APK
-        run: gradle --no-daemon assembleDebug
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          fi
+          /tmp/gradle-8.9/bin/gradle --no-daemon --stacktrace assembleDebug
       - name: Validar APK
         run: test -s app/build/outputs/apk/debug/app-debug.apk
       - name: Publicar APK como artefato
