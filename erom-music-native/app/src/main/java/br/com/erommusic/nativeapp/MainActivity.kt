@@ -1,6 +1,6 @@
 package br.com.erommusic.nativeapp
 
-import android.content.Context
+import android.content.Context\nimport android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
@@ -70,18 +70,19 @@ private fun EromMusicApp() {
 
     fun playSong(file: File) {
         try {
-            player?.release()
-            player = MediaPlayer().apply {
-                setDataSource(file.absolutePath)
-                setOnCompletionListener { playing = false }
-                prepare()
-                start()
+            val intent = Intent(context, PlaybackService::class.java)
+                .setAction(PlaybackService.ACTION_PLAY)
+                .putExtra(PlaybackService.EXTRA_PATH, file.absolutePath)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
             }
             currentSong = file
             playing = true
         } catch (_: Exception) {
             playing = false
-            Toast.makeText(context, "Não foi possível reproduzir este arquivo.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Não foi possível iniciar a reprodução.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -115,7 +116,7 @@ private fun EromMusicApp() {
 
     DisposableEffect(Unit) {
         refreshSongs()
-        onDispose { player?.release(); player = null }
+        onDispose { /* A reprodução pertence ao serviço e continua com a tela fechada. */ }
     }
 
     MaterialTheme(colorScheme = darkColorScheme(
@@ -266,18 +267,14 @@ private fun EromMusicApp() {
                             Text(song.nameWithoutExtension, color = White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         IconButton(onClick = {
-                            val p = player
-                            if (p != null) {
-                                if (playing) { p.pause(); playing = false }
-                                else { p.start(); playing = true }
-                            }
+                            val action = if (playing) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_RESUME
+                            context.startService(Intent(context, PlaybackService::class.java).setAction(action))
+                            playing = !playing
                         }) {
                             Icon(if (playing) Icons.Default.PauseCircleFilled else Icons.Default.PlayCircleFilled, if (playing) "Pausar" else "Continuar", tint = Green, modifier = Modifier.size(34.dp))
                         }
                         IconButton(onClick = {
-                            player?.stop()
-                            player?.release()
-                            player = null
+                            context.startService(Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_STOP))
                             currentSong = null
                             playing = false
                         }) { Icon(Icons.Default.Close, "Parar", tint = Muted) }
