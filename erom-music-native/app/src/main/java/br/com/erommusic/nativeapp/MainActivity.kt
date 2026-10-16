@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +60,10 @@ private fun EromMusicApp() {
     val songs = remember { mutableStateListOf<File>() }
     var currentSong by remember { mutableStateOf<File?>(null) }
     var playing by remember { mutableStateOf(false) }
+    var showLyrics by remember { mutableStateOf(false) }
+    var accentIndex by remember { mutableIntStateOf(0) }
+    val accents = listOf(Color(0xFF1ED760), Color(0xFF58A6FF), Color(0xFFB78AFF), Color(0xFFFF5B70), Color(0xFFFFB84D))
+    val accent = accents[accentIndex]
     var search by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf("Biblioteca") }
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -122,7 +128,7 @@ private fun EromMusicApp() {
     }
 
     MaterialTheme(colorScheme = darkColorScheme(
-        primary = Green, background = Background, surface = SurfaceDark,
+        primary = accent, background = Background, surface = SurfaceDark,
         onPrimary = Color.Black, onBackground = White, onSurface = White
     )) {
         Scaffold(
@@ -163,7 +169,7 @@ private fun EromMusicApp() {
                     }
                     Spacer(Modifier.weight(1f))
                     IconButton(onClick = { importLauncher.launch(arrayOf("audio/*", "application/zip", "application/x-zip-compressed")) }) {
-                        Icon(Icons.Default.Add, "Importar músicas", tint = Green)
+                        Icon(Icons.Default.Add, "Importar músicas", tint = accent)
                     }
                 }
 
@@ -298,27 +304,64 @@ private fun EromMusicApp() {
                 }
 
                 currentSong?.let { song ->
-                    Row(
-                        Modifier.fillMaxWidth().background(Color(0xFF080808)).padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        Modifier.fillMaxWidth().background(Color(0xFF071A1D)).clickable { showLyrics = true }
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("TOCANDO AGORA", color = Green, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            Text(song.nameWithoutExtension, color = White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(48.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF253F48)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Album, null, tint = accent, modifier = Modifier.size(30.dp))
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(song.nameWithoutExtension, color = White, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
+                                Text(if (playing) "Tocando agora • Erom Music" else "Pausado • Erom Music", color = Muted, fontSize = 12.sp, maxLines = 1)
+                            }
+                            IconButton(onClick = { showLyrics = true }) {
+                                Icon(Icons.Default.Lyrics, "Ver letra", tint = White)
+                            }
+                            IconButton(onClick = {
+                                val action = if (playing) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_RESUME
+                                context.startService(Intent(context, PlaybackService::class.java).setAction(action))
+                                playing = !playing
+                            }) {
+                                Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pausar" else "Continuar", tint = White, modifier = Modifier.size(30.dp))
+                            }
                         }
-                        IconButton(onClick = {
-                            val action = if (playing) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_RESUME
-                            context.startService(Intent(context, PlaybackService::class.java).setAction(action))
-                            playing = !playing
-                        }) {
-                            Icon(if (playing) Icons.Default.PauseCircleFilled else Icons.Default.PlayCircleFilled, if (playing) "Pausar" else "Continuar", tint = Green, modifier = Modifier.size(34.dp))
-                        }
-                        IconButton(onClick = {
-                            context.startService(Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_STOP))
-                            currentSong = null
-                            playing = false
-                        }) { Icon(Icons.Default.Close, "Parar", tint = Muted) }
+                        Spacer(Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { if (playing) 0.38f else 0f },
+                            modifier = Modifier.fillMaxWidth().height(2.dp).clip(CircleShape),
+                            color = accent,
+                            trackColor = Color(0xFF536168)
+                        )
                     }
+                }
+
+                if (showLyrics) {
+                    val lyricFile = currentSong?.let { File(it.parentFile, it.nameWithoutExtension + ".lrc") }
+                    val lyricText = lyricFile?.takeIf { it.isFile }?.readText().orEmpty()
+                    AlertDialog(
+                        onDismissRequest = { showLyrics = false },
+                        containerColor = SurfaceDark,
+                        title = { Text(currentSong?.nameWithoutExtension ?: "Letra da música", color = White) },
+                        text = {
+                            Column(Modifier.fillMaxWidth().heightIn(max = 440.dp).verticalScroll(rememberScrollState())) {
+                                Text(
+                                    if (lyricText.isBlank()) "Nenhuma letra local encontrada. Para usar letras offline, importe um arquivo .lrc com o mesmo nome da música. Traduções podem ser incluídas abaixo da letra original no próprio arquivo." else lyricText,
+                                    color = White,
+                                    fontSize = 15.sp,
+                                    lineHeight = 23.sp
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showLyrics = false }) { Text("Fechar", color = accent) }
+                        }
+                    )
                 }
             }
         }
