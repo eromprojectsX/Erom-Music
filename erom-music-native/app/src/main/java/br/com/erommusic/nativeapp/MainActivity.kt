@@ -104,7 +104,7 @@ private fun EromMusicApp() {
             }
         }
         refreshSongs()
-        Toast.makeText(context, "\${imported} música(s) importada(s).", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "${imported} música(s) importada(s).", Toast.LENGTH_LONG).show()
     }
 
     DisposableEffect(Unit) {
