@@ -1,6 +1,7 @@
 package br.com.erommusic.nativeapp
 
-import android.content.Context\nimport android.content.Intent
+import android.content.Context
+import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
