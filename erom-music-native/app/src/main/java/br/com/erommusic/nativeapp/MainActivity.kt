@@ -104,7 +104,7 @@ private fun EromMusicApp() {
             }
         }
         refreshSongs()
-        Toast.makeText(context, "$" + "{imported} música(s) importada(s).", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "\${imported} música(s) importada(s).", Toast.LENGTH_LONG).show()
     }
 
     DisposableEffect(Unit) {
@@ -181,7 +181,7 @@ private fun EromMusicApp() {
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(if (selectedTab == "Buscar") "Resultados locais" else "Sua biblioteca", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-                        Text("$" + "{songs.size} música(s) • funciona offline", color = Muted, fontSize = 13.sp)
+                        Text("\${songs.size} música(s) • funciona offline", color = Muted, fontSize = 13.sp)
                     }
                     Button(
                         onClick = { importLauncher.launch(arrayOf("audio/*")) },
@@ -306,7 +306,7 @@ private fun uniqueFile(folder: File, name: String): File {
     while (candidate.exists()) {
         val stem = safe.substringBeforeLast('.', safe)
         val ext = safe.substringAfterLast('.', "")
-        candidate = File(folder, if (ext.isBlank()) "$" + "{stem} ($index)" else "$" + "{stem} ($index).$" + "{ext}")
+        candidate = File(folder, if (ext.isBlank()) "\${stem} ($index)" else "\${stem} ($index).\${ext}")
         index++
     }
     return candidate
@@ -314,7 +314,7 @@ private fun uniqueFile(folder: File, name: String): File {
 
 private fun formatBytes(bytes: Long): String {
     return when {
-        bytes < 1024 -> "$" + "{bytes} B"
+        bytes < 1024 -> "\${bytes} B"
         bytes < 1024 * 1024 -> String.format(Locale.getDefault(), "%.0f KB", bytes / 1024.0)
         else -> String.format(Locale.getDefault(), "%.1f MB", bytes / (1024.0 * 1024.0))
     }
