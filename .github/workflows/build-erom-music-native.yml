@@ -25,15 +25,18 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
-      - name: Preparar projeto Android
+      - name: Validar estrutura do projeto
         shell: bash
         run: |
           set -euo pipefail
-          test -s erom-music-native/app/src/main/java/br/com/erommusic/nativeapp/MainActivity.kt
-          test -s erom-music-native/app/src/main/AndroidManifest.xml
+          test -s erom-music-native/settings.gradle
+          test -s erom-music-native/build.gradle
           test -s erom-music-native/app/build.gradle
-          echo "Projeto Android nativo validado."
+          test -s erom-music-native/app/src/main/AndroidManifest.xml
+          test -s erom-music-native/app/src/main/java/br/com/erommusic/nativeapp/MainActivity.kt
+          echo "Estrutura Gradle e fontes Android validadas."
 
       - name: Instalar componentes Android
         shell: bash
@@ -44,15 +47,16 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Compilar APK Android nativo
+      - name: Compilar e validar APK
         shell: bash
         run: |
           set -euo pipefail
           curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
           unzip -q /tmp/gradle.zip -d /tmp
-          /tmp/gradle-8.9/bin/gradle --no-daemon --stacktrace -p erom-music-native assembleDebug
+          /tmp/gradle-8.9/bin/gradle --no-daemon --stacktrace -p erom-music-native clean :app:assembleDebug
           APK=erom-music-native/app/build/outputs/apk/debug/app-debug.apk
           test -s "$APK" || { echo "::error::APK nativo não foi gerado"; exit 1; }
+          unzip -t "$APK"
           unzip -l "$APK" | grep -q 'classes.dex'
           mkdir -p output
           cp "$APK" output/Erom-Musica-NATIVO.apk
