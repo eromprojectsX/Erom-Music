@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -206,6 +207,44 @@ private fun EromMusicApp() {
                     color = Muted, fontSize = 11.sp,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                 )
+
+                val recentSongs = songs.sortedByDescending { it.lastModified() }.take(8)
+                if (selectedTab == "Biblioteca" && recentSongs.isNotEmpty()) {
+                    Text(
+                        "Adicionadas recentemente",
+                        color = White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 10.dp)
+                    )
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(recentSongs, key = { "recent-" + it.absolutePath }) { song ->
+                            Column(
+                                Modifier.width(148.dp).clickable { playSong(song) },
+                                verticalArrangement = Arrangement.spacedBy(7.dp)
+                            ) {
+                                Box(
+                                    Modifier.fillMaxWidth().aspectRatio(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF202C3A)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.Album, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(58.dp))
+                                    if (currentSong == song) {
+                                        Icon(Icons.Default.GraphicEq, null, tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(24.dp))
+                                    }
+                                }
+                                Text(song.nameWithoutExtension, color = White, fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
 
                 val visibleSongs = songs.filter { it.name.contains(search, ignoreCase = true) }
                 if (visibleSongs.isEmpty()) {
