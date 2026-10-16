@@ -16,3 +16,6 @@ gradle assembleDebug
 ```
 
 O APK de depuração é gerado em `app/build/outputs/apk/debug/app-debug.apk`.
+
+## Compilação pelo GitHub
+O workflow `Build Erom Music Offline APK` compila o APK a cada alteração relevante na branch `main` e publica o arquivo `Erom-Music-Offline-APK` como artefato da execução. O artefato fica disponível por 14 dias.
