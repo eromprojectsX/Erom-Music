@@ -1,0 +1,52 @@
+name: Build Erom Music Offline APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "erom-music-native/**"
+      - ".github/workflows/build-offline-apk.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "erom-music-native/**"
+      - ".github/workflows/build-offline-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erom-music-offline-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Compile offline Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Compile debug APK
+        working-directory: erom-music-native
+        run: gradle --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Erom-Music-Offline-APK
+          path: erom-music-native/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
