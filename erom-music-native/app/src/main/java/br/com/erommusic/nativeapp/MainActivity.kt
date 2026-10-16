@@ -173,6 +173,23 @@ private fun EromMusicApp() {
                     }
                 }
 
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Cor do app", color = Muted, fontSize = 12.sp)
+                    accents.forEachIndexed { index, color ->
+                        Box(
+                            Modifier.size(24.dp).clip(CircleShape).background(color)
+                                .clickable { accentIndex = index },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (accentIndex == index) Icon(Icons.Default.Check, null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+
                 if (selectedTab == "Buscar") {
                     OutlinedTextField(
                         value = search,
