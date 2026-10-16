@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
 import java.util.Locale
+import java.util.zip.ZipInputStream
 
 private val Background = Color(0xFF101010)
 private val SurfaceDark = Color(0xFF1B1B1B)
@@ -88,23 +89,28 @@ private fun EromMusicApp() {
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         var imported = 0
+        var failed = 0
+        val audioExtensions = setOf("mp3", "m4a", "aac", "wav", "ogg", "flac", "opus")
         uris.forEach { uri ->
             try {
                 val name = safeFileName(context, uri)
                 val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
-                if (ext !in setOf("mp3", "m4a", "aac", "wav", "ogg", "flac", "opus")) return@forEach
-                val target = uniqueFile(musicFolder, name)
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    target.outputStream().use { output -> input.copyTo(output) }
+                if (ext == "zip") {
+                    imported += importZip(context, uri, musicFolder, audioExtensions)
+                } else if (ext in audioExtensions) {
+                    val target = uniqueFile(musicFolder, name)
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    if (target.exists() && target.length() > 0L) imported++ else target.delete()
                 }
-                if (target.exists() && target.length() > 0L) imported++
-                else target.delete()
             } catch (_: Exception) {
-                // Skip unreadable files and continue importing the others.
+                failed++
             }
         }
         refreshSongs()
-        Toast.makeText(context, "${imported} música(s) importada(s).", Toast.LENGTH_LONG).show()
+        val message = if (failed == 0) "${imported} música(s) importada(s)." else "${imported} importada(s); ${failed} arquivo(s) não puderam ser lidos."
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
     }
 
     DisposableEffect(Unit) {
@@ -153,7 +159,7 @@ private fun EromMusicApp() {
                         Text("MÚSICA", fontSize = 22.sp, color = White, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
                     }
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { importLauncher.launch(arrayOf("audio/*")) }) {
+                    IconButton(onClick = { importLauncher.launch(arrayOf("audio/*", "application/zip", "application/x-zip-compressed")) }) {
                         Icon(Icons.Default.Add, "Importar músicas", tint = Green)
                     }
                 }
@@ -184,7 +190,7 @@ private fun EromMusicApp() {
                         Text("${songs.size} música(s) • funciona offline", color = Muted, fontSize = 13.sp)
                     }
                     Button(
-                        onClick = { importLauncher.launch(arrayOf("audio/*")) },
+                        onClick = { importLauncher.launch(arrayOf("audio/*", "application/zip", "application/x-zip-compressed")) },
                         colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color.Black),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                     ) {
@@ -213,7 +219,7 @@ private fun EromMusicApp() {
                         Spacer(Modifier.height(8.dp))
                         Text("Importe arquivos de áudio do dispositivo. Eles serão copiados para a pasta do Erom Music e poderão tocar sem internet.", color = Muted, fontSize = 14.sp)
                         Spacer(Modifier.height(18.dp))
-                        Button(onClick = { importLauncher.launch(arrayOf("audio/*")) }, colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color.Black)) {
+                        Button(onClick = { importLauncher.launch(arrayOf("audio/*", "application/zip", "application/x-zip-compressed")) }, colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color.Black)) {
                             Icon(Icons.Default.FolderOpen, null)
                             Spacer(Modifier.width(8.dp))
                             Text("Escolher músicas")
@@ -280,6 +286,57 @@ private fun EromMusicApp() {
             }
         }
     }
+}
+
+
+private fun importZip(
+    context: Context,
+    uri: Uri,
+    folder: File,
+    audioExtensions: Set<String>
+): Int {
+    var imported = 0
+    var totalBytes = 0L
+    val maxTotalBytes = 512L * 1024L * 1024L
+    val maxEntryBytes = 128L * 1024L * 1024L
+    context.contentResolver.openInputStream(uri)?.use { raw ->
+        ZipInputStream(raw).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory) {
+                    val entryName = entry.name.replace('\\', '/')
+                    val baseName = entryName.substringAfterLast('/')
+                    val ext = baseName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                    if (baseName.isNotBlank() && ext in audioExtensions && !entryName.startsWith("/") && !entryName.split('/').any { it == ".." }) {
+                        val target = uniqueFile(folder, baseName)
+                        var entryBytes = 0L
+                        try {
+                            target.outputStream().use { output ->
+                                val buffer = ByteArray(16 * 1024)
+                                while (true) {
+                                    val count = zip.read(buffer)
+                                    if (count < 0) break
+                                    entryBytes += count
+                                    totalBytes += count
+                                    if (entryBytes > maxEntryBytes || totalBytes > maxTotalBytes) {
+                                        throw IllegalStateException("ZIP excede o limite de extração")
+                                    }
+                                    output.write(buffer, 0, count)
+                                }
+                            }
+                            if (target.exists() && target.length() > 0L) imported++ else target.delete()
+                        } catch (e: Exception) {
+                            target.delete()
+                            throw e
+                        }
+                    }
+                }
+                zip.closeEntry()
+                entry = zip.nextEntry
+            }
+        }
+    }
+    return imported
 }
 
 private fun getMusicFolder(context: Context): File {
