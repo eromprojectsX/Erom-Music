@@ -1,13 +1,15 @@
-# Erom Música
+# Erom Música — aplicativo offline
 
-Repositório dedicado ao projeto Erom Música, organizado a partir dos arquivos disponíveis no repositório antigo `eromprojectsX/Erom.Xxx`.
+Este repositório contém somente o projeto Android nativo do Erom Música.
 
-## Conteúdo
-- `Erom-Music-Frontend-Original-Cloudflare.zip`: arquivo do frontend disponível nesta conta.
-- `erom-music-native/`: código-fonte do projeto Android nativo.
-- `.github/workflows/`: fluxos de compilação Android/APK, incluindo `Build Erom Música Original Frontend APK`.
+## Funcionamento
+- Importa arquivos de áudio escolhidos pelo usuário.
+- Copia os arquivos para o armazenamento privado do aplicativo.
+- Pesquisa e reproduz músicas locais sem depender de internet.
+- Não usa servidor próprio, banco de dados remoto, Supabase, Firebase, Cloudflare R2 ou APIs de catálogo.
+- Não varre a pasta do WhatsApp.
 
-## Gerar APK do frontend
-No GitHub, abra **Actions** → **Build Erom Música Original Frontend APK** → **Run workflow**. O fluxo extrai o ZIP arquivado e compila um APK de teste (debug). O arquivo APK fica nos artefatos da execução.
+## Compilar o APK
+O fluxo `Build Erom Música Native APK` em GitHub Actions compila o app. O GitHub é usado somente para armazenar o código-fonte e executar a compilação; não serve músicas ao aplicativo.
 
-Observação: o ZIP presente neste repositório é a cópia que já estava disponível na conta; não foi possível comparar byte a byte com o antigo `Erom-Music-WEBSITE-LIMPO.zip` porque esse arquivo não está disponível nesta sessão.
+Requisitos locais: JDK 17, Android SDK 35 e Gradle 8.9.
